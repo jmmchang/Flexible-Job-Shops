@@ -125,17 +125,7 @@ def generate_random_instance(num_jobs = 15, centers = ('C1','C2','C3',"C4"),
 
     return jobs_data, release_dates, due_dates, weights, setup_times, center_caps
 
-def plot_gantt(schedule,
-               title="Gantt Chart",
-               filename=None):
-    """
-    schedule: dict
-        { job_id: [ (op_idx, machine, start, end), ... ], ... }
-    title: str
-    filename: str or None, 若指定則儲存成檔案
-
-    依機台排序繪製每個工序的水平長條，並於中間標上 JxOy。
-    """
+def plot_gantt(schedule, title="Gantt Chart"):
     # 1. 準備 y 軸：機台列表與對應座標
     machines = sorted({ m for ops in schedule.values() for _, m, _, _ in ops })
     y_pos = { m: i for i, m in enumerate(machines) }
