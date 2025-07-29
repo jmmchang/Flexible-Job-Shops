@@ -95,7 +95,7 @@ def solve_fjs_with_parallel_machines(jobs_data,
     return None, None
 
 def generate_random_instance(num_jobs = 15, centers = ('C1','C2','C3',"C4"),
-                             center_caps = {'C1':3,'C2':2,'C3':3,"C4":2},
+                             center_caps = {'C1':3,'C2':2,'C3':3,"C4":1},
                              num_ops = {'C1':4,'C2':3,'C3':2,"C4":1}):
 
     jobs_data, release_dates, due_dates, weights = {}, {}, {}, {}
@@ -111,7 +111,7 @@ def generate_random_instance(num_jobs = 15, centers = ('C1','C2','C3',"C4"),
                 ops.append((dur, c))
 
         jobs_data[j] = ops
-        due_dates[j]     = random.randint(np.floor(total_dur * 2), np.floor(total_dur * 5))
+        due_dates[j]     = random.randint(np.floor(total_dur * 2), np.floor(total_dur * 4))
         release_dates[j] = random.randint(0, due_dates[j] // 2)
         weights[j]       = random.randint(1, 5)
 
@@ -161,3 +161,133 @@ def plot_gantt(schedule, title="Gantt Chart"):
     ax.grid(axis="x", linestyle="--", alpha=0.5)
     plt.tight_layout()
     plt.show()
+
+class SchedulingProblem:
+    def __init__(self, jobs_data, release_dates, due_dates,
+                 weights, setup_times, center_caps):
+        self.jobs_data = jobs_data
+        self.release = release_dates
+        self.due_dates = due_dates
+        self.weights = weights
+        self.setup_times = setup_times
+        self.center_caps = center_caps
+
+    def encode(self, seed_solution = None):
+        machine_assign = {}
+        priorities = {}
+
+        if seed_solution:
+            ma_seed, pr_seed = seed_solution
+            machine_assign = ma_seed.copy()
+            priorities     = pr_seed.copy()
+        else:
+            for j, ops in self.jobs_data.items():
+                base = random.random()
+                for o in range(len(ops)):
+                    centers = self.jobs_data[j][o][1]
+                    p = random.choice([centers])
+                    k = random.randrange(self.center_caps[p])
+                    machine_assign[(j,o)] = f"{p}_{k}"
+                    priorities[(j,o)] = base + 0.001 * o
+
+        return machine_assign, priorities
+
+    def decode(self, machine_assign, priorities):
+        machines = []
+
+        for c, cap in self.center_caps.items():
+            for k in range(cap):
+                machines.append(f"{c}_{k}")
+
+        mc_timeline = {m:[] for m in machines}
+        doc_times = {}
+        ops_sorted = sorted(priorities.items(), key = lambda x: x[1])
+
+        for (j, o), _ in ops_sorted:
+            m = machine_assign[(j,o)]
+            p = m.split('_')[0]
+            duration, _ = self.jobs_data[j][o]
+
+            t = self.release[j]
+            if o > 0:
+                prev_end = doc_times[(j, o-1)][1]
+                t = max(t, prev_end)
+
+            timeline = sorted(mc_timeline[m], key = lambda x: x[0])
+            for prev_end, prev_op in timeline:
+                s = self.setup_times.get(p, {}).get((prev_op, (j,o)), 0)
+                t = max(t, prev_end + s)
+
+            start, end = t, t + duration
+            mc_timeline[m].append((end, (j,o)))
+            doc_times[(j,o)] = (start, end)
+
+        obj = 0
+        for j, ops in self.jobs_data.items():
+            last_endtime = doc_times[(j, len(ops)-1)][1]
+            obj += self.weights[j] * max(0, last_endtime - self.due_dates[j])
+
+        return obj
+
+def decode_schedule(jobs_data,
+                    release_dates,
+                    setup_times,
+                    machine_assign,
+                    priorities):
+    """
+    將 priority-based GA 染色體轉為可視甘特圖的 schedule。
+    Arguments:
+      jobs_data: {j: [(duration, [centers]), ...]}
+      release_dates: {j: rj}
+      setup_times: {p: {((j1,o1),(j2,o2)): s_time}}
+      machine_assign: {(j,o): "C1_0", ...}
+      priorities: {(j,o): float, ...}
+
+    Returns:
+      schedule: { j: [ (o, m, start, end), ... ] }
+    """
+
+    # 1. 準備：各機台的時間表
+    machines = set(machine_assign.values())
+    mc_timeline = {m: [] for m in machines}
+    so_times = {}
+
+    # 2. 按 priority 排序所有 (j,o)
+    ops = list(priorities.items())
+    # 如果 priority 相同，用 (j,o) 做小 tiebreaker
+    ops_sorted = sorted(ops, key=lambda x: (x[1], x[0]))
+
+    # 3. 逐一排程
+    for (j,o), pr in ops_sorted:
+        m = machine_assign[(j,o)]
+        # 3.1 計算起始下界 t0
+        t0 = release_dates.get(j, 0)
+        if o > 0:
+            # 前序完成
+            prev_en = so_times[(j, o-1)][1]
+            t0 = max(t0, prev_en)
+
+        # 3.2 機台上考慮換線與已排工序
+        timeline = sorted(mc_timeline[m], key=lambda x: x[0])  # (end_prev,(j_prev,o_prev))
+        t = t0
+        center = m.split('_')[0]
+
+        for end_prev, prev_op in timeline:
+            # 從 prev_op → current op 的換線
+            s = setup_times.get(center, {}).get((prev_op, (j,o)), 0)
+            # 若 t < end_prev + s，必須推到 end_prev+s
+            if t < end_prev + s:
+                t = end_prev + s
+
+        # 3.3 計算結束時間並更新
+        st, en = t, t + jobs_data[j][o][0]
+        so_times[(j,o)] = (st, en)
+        mc_timeline[m].append((en, (j,o)))
+
+    # 4. 建立 schedule dict
+    schedule = {}
+    for (j,o), (st,en) in so_times.items():
+        m = machine_assign[(j,o)]
+        schedule.setdefault(j, []).append((o, m, st, en))
+
+    return schedule
