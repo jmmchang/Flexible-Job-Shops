@@ -1,5 +1,7 @@
 import random
 import copy
+from functions import decode_schedule
+from collections import defaultdict
 
 class GeneticAlgorithm:
     def __init__(self, problem, pop_size = 100, max_generations = 50, cross_p = 0.8, mut_p = 0.2):
@@ -22,6 +24,7 @@ class GeneticAlgorithm:
     def mutate(self, target):
         new_target = copy.deepcopy(target)
         ops = list(new_target[1])
+
         if random.random() < self.mut_p:
             j,o = random.choice(ops)
             centers = self.problem.jobs_data[j][o][1]
@@ -30,10 +33,40 @@ class GeneticAlgorithm:
             new_target[0][(j,o)] = f"{p}_{k}"
 
         if random.random() < self.mut_p:
-            j, _ = random.choice(ops)
-            base = random.random()
-            for o in range(len(self.problem.jobs_data[j])):
-                new_target[1][(j,o)] = base + 0.1 * o
+            new_assign, new_prio = new_target
+            schedule = decode_schedule(
+                self.problem.jobs_data,
+                self.problem.release,
+                self.problem.setup_times,
+                new_assign,
+                new_prio)
+
+            by_machine = defaultdict(list)
+            for j, ops in schedule.items():
+                for o, m, st, _ in ops:
+                    by_machine[m].append((st, j, o))
+
+            # 2. 隨機挑一台有 >=2 道工序的機台
+            machines = [m for m, lst in by_machine.items() if len(lst) > 1]
+            if not machines:
+                return new_assign, new_prio
+            m = random.choice(machines)
+
+            # 3. 排序後隨機選一個「當前」索引 idx，與 idx-1 的工序做交換
+            ops = sorted(by_machine[m], key=lambda x: x[0])
+            idx = random.randint(1, len(ops) - 1)
+            _, j_cur, o_cur = ops[idx]
+            _, j_pre, o_pre = ops[idx - 1]
+            if j_cur != j_pre:
+                new_prio[(j_cur, o_cur)], new_prio[(j_pre, o_pre)] = new_prio[(j_pre, o_pre)], new_prio[(j_cur, o_cur)]
+
+            for j in (j_pre, j_cur):
+                ops_count = len(self.problem.jobs_data[j])
+                # 收集所有 op 的 priority，排序
+                sorted_vals = sorted(new_prio[(j, o)] for o in range(ops_count))
+                # 依序寫回，保證 op0 < op1 < ...
+                for o, val in enumerate(sorted_vals):
+                    new_prio[(j, o)] = val
 
         return new_target
 
