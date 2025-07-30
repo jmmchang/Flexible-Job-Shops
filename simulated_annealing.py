@@ -1,5 +1,6 @@
 import random
 import numpy as np
+import copy
 
 class SimulatedAnnealing:
     def __init__(self, problem, initial_temperature = 1000, min_temperature = 0.01,
@@ -16,7 +17,7 @@ class SimulatedAnnealing:
         return self.problem.decode(target[0], target[1])
 
     def random_swap(self, target):
-        new_target = target
+        new_target = copy.deepcopy(target)
         ops = list(new_target[1])
         j, _ = random.choice(ops)
         base = random.random()
@@ -28,24 +29,24 @@ class SimulatedAnnealing:
     def run(self, seed_solution):
         t = self.init_temp
         k = 0
-        curr_best = seed_solution
-        curr_obj = self.evaluate(curr_best)
-        best = curr_best
+        curr = seed_solution
+        curr_obj = self.evaluate(curr)
+        best = curr
         best_obj = curr_obj
 
         while t > self.min_temp and k < self.max_iter:
             for _ in range(self.steps):
-                new = self.random_swap(curr_best)
+                new = self.random_swap(curr)
                 new_obj = self.evaluate(new)
                 diff = new_obj - curr_obj
                 prob = min(1, np.exp(-diff / t))
 
                 if prob >= random.uniform(0, 1):
-                    curr_best = new
+                    curr = new
                     curr_obj = new_obj
 
-                if curr_obj < best_obj:
-                    best, best_obj = curr_best, curr_obj
+                if new_obj < best_obj:
+                    best, best_obj = new, new_obj
 
             t = t * self.cool
             k += 1

@@ -4,14 +4,9 @@ import random
 import numpy as np
 import matplotlib.pyplot as plt
 
-def solve_fjs_with_parallel_machines(jobs_data,
-                                     release_dates,
-                                     due_dates,
-                                     weights,
-                                     setup_times,
-                                     center_caps):
+def solve_fjs_with_parallel_machines(jobs_data, release_dates, due_dates,
+                                     weights, setup_times, center_caps, alpha = 0.5):
     model = cp_model.CpModel()
-
     # 1. 生成實體機台
     machines, center_of = [], {}
     for p, cap in center_caps.items():
@@ -69,7 +64,12 @@ def solve_fjs_with_parallel_machines(jobs_data,
         tardiness[j] = model.NewIntVar(0, horizon, f"T_j{j}")
         model.Add(tardiness[j] >= end[j, last] - due_dates[j])
 
-    model.Minimize(sum(weights[j] * tardiness[j] for j in jobs_data))
+    makespan = model.new_int_var(0, horizon, "makespan")
+    model.add_max_equality(
+        makespan,
+        [end[j, len(jobs_data[j]) - 1] for j in range(len(jobs_data))],
+    )
+    model.Minimize(alpha * makespan + (1-alpha) * sum(weights[j] * tardiness[j] for j in jobs_data))
 
     # 6. 求解
     solver = cp_model.CpSolver()
@@ -164,13 +164,14 @@ def plot_gantt(schedule, title="Gantt Chart"):
 
 class SchedulingProblem:
     def __init__(self, jobs_data, release_dates, due_dates,
-                 weights, setup_times, center_caps):
+                 weights, setup_times, center_caps, alpha = 0.5):
         self.jobs_data = jobs_data
         self.release = release_dates
         self.due_dates = due_dates
         self.weights = weights
         self.setup_times = setup_times
         self.center_caps = center_caps
+        self.alpha = alpha
 
     def encode(self, seed_solution = None):
         machine_assign = {}
@@ -223,9 +224,14 @@ class SchedulingProblem:
             doc_times[(j,o)] = (start, end)
 
         obj = 0
+        makespan = 0
         for j, ops in self.jobs_data.items():
             last_endtime = doc_times[(j, len(ops)-1)][1]
+            makespan = max(makespan, last_endtime)
             obj += self.weights[j] * max(0, last_endtime - self.due_dates[j])
+
+        obj *= (1-self.alpha)
+        obj += self.alpha * makespan
 
         return obj
 

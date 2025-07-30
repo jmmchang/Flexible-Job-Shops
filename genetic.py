@@ -1,4 +1,5 @@
 import random
+import copy
 
 class GeneticAlgorithm:
     def __init__(self, problem, pop_size = 100, max_generations = 50, cross_p = 0.8, mut_p = 0.2):
@@ -19,7 +20,7 @@ class GeneticAlgorithm:
         return fitness
 
     def mutate(self, target):
-        new_target = target
+        new_target = copy.deepcopy(target)
         ops = list(new_target[1])
         if random.random() < self.mut_p:
             j,o = random.choice(ops)
