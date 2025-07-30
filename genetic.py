@@ -32,7 +32,7 @@ class GeneticAlgorithm:
             j, _ = random.choice(ops)
             base = random.random()
             for o in range(len(self.problem.jobs_data[j])):
-                new_target[1][(j,o)] = base + 0.001 * o
+                new_target[1][(j,o)] = base + 0.1 * o
 
         return new_target
 
@@ -58,7 +58,7 @@ class GeneticAlgorithm:
         for j in job_order:
             base = combined_bases[j]
             for o in range(len(self.problem.jobs_data[j])):
-                child_priority[(j, o)] = base + 0.001 * o
+                child_priority[(j, o)] = base + 0.1 * o
 
         child = (parent1[0], child_priority)
         child = self.mutate(child)

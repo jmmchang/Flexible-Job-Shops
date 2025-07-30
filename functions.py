@@ -95,8 +95,8 @@ def solve_fjs_with_parallel_machines(jobs_data,
     return None, None
 
 def generate_random_instance(num_jobs = 15, centers = ('C1','C2','C3',"C4"),
-                             center_caps = {'C1':3,'C2':2,'C3':3,"C4":1},
-                             num_ops = {'C1':4,'C2':3,'C3':2,"C4":1}):
+                             center_caps = {'C1':3,'C2':2,'C3':2,"C4":2},
+                             num_ops = {'C1':1,'C2':1,'C3':1,"C4":1}):
 
     jobs_data, release_dates, due_dates, weights = {}, {}, {}, {}
     setup_times = {p:{} for p in centers}
@@ -112,7 +112,7 @@ def generate_random_instance(num_jobs = 15, centers = ('C1','C2','C3',"C4"),
 
         jobs_data[j] = ops
         due_dates[j]     = random.randint(np.floor(total_dur * 2), np.floor(total_dur * 4))
-        release_dates[j] = random.randint(0, due_dates[j] // 2)
+        release_dates[j] = random.randint(0, (due_dates[j] - total_dur) // 2)
         weights[j]       = random.randint(1, 5)
 
     # 隨機設定序依換線時間

@@ -21,7 +21,7 @@ class SimulatedAnnealing:
         j, _ = random.choice(ops)
         base = random.random()
         for o in range(len(self.problem.jobs_data[j])):
-            new_target[1][(j,o)] = base + 0.001 * o
+            new_target[1][(j,o)] = base + 0.1 * o
 
         return new_target
 
