@@ -16,13 +16,13 @@ def solve_fjs_with_parallel_machines(jobs_data, release_dates, due_dates,
             center_of[m] = p
 
     # 2. 決策變數
-    horizon = sum(d for ops in jobs_data.values() for d,_ in ops) + max(due_dates.values())
+    horizon = sum(d for ops in jobs_data.values() for d,_ in ops) + max(release_dates.values())
     start, end, assign, tardiness = {}, {}, {}, {}
 
     for j, ops in jobs_data.items():
         for o, (dur, centers) in enumerate(ops):
-            start[j, o] = model.NewIntVar(0, horizon, f"s_j{j}o{o}")
-            end[j, o]   = model.NewIntVar(0, horizon, f"e_j{j}o{o}")
+            start[j, o] = model.NewIntVar(release_dates[j], horizon - dur, f"s_j{j}o{o}")
+            end[j, o]   = model.NewIntVar(release_dates[j] + dur, horizon, f"e_j{j}o{o}")
             # 只為允許的機台建 assign 變數
             valid = [m for m in machines if center_of[m] in centers]
             bools = []
@@ -34,9 +34,8 @@ def solve_fjs_with_parallel_machines(jobs_data, release_dates, due_dates,
 
             model.AddExactlyOne(bools)
 
-    # 3. 釋放時間與工序順序
+    # 3. 工序順序
     for j, ops in jobs_data.items():
-        model.Add(start[j, 0] >= release_dates[j])
         for o in range(len(ops) - 1):
             model.Add(start[j, o + 1] >= end[j, o])
 
@@ -62,7 +61,7 @@ def solve_fjs_with_parallel_machines(jobs_data, release_dates, due_dates,
     for j, ops in jobs_data.items():
         last = len(ops) - 1
         tardiness[j] = model.NewIntVar(0, horizon, f"T_j{j}")
-        model.Add(tardiness[j] >= end[j, last] - due_dates[j])
+        model.add_max_equality(tardiness[j],[0, end[j, last] - due_dates[j]],)
 
     makespan = model.new_int_var(0, horizon, "makespan")
     model.add_max_equality(
