@@ -95,9 +95,8 @@ def solve_fjs_with_parallel_machines(jobs_data, release_dates, due_dates,
 
 def generate_random_instance(num_jobs = 20, centers = ('C1','C2','C3',"C4"),
                              center_caps = {'C1':2,'C2':2,'C3':2,"C4":2},
-                             num_ops = {'C1':1,'C2':1,'C3':1,"C4":1}, seed = 42):
+                             num_ops = {'C1':1,'C2':1,'C3':1,"C4":1}):
 
-    random.seed(seed)
     jobs_data, release_dates, due_dates, weights = {}, {}, {}, {}
     setup_times = {p:{} for p in centers}
 

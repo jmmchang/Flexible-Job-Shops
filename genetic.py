@@ -3,14 +3,13 @@ import copy
 from collections import defaultdict, deque
 
 class GeneticAlgorithm:
-    def __init__(self, problem, pop_size = 100, max_generations = 50, cross_p = 0.8, mut_p = 0.2, seed = 42):
+    def __init__(self, problem, pop_size = 100, max_generations = 50, cross_p = 0.8, mut_p = 0.2):
         self.problem = problem
         self.pop_size = pop_size
         self.gen_max = max_generations
         self.cross_p = cross_p
         self.mut_p = mut_p
         self.population = []
-        random.seed(seed)
 
     def init_population(self, seed_solution):
         self.population.append(seed_solution)

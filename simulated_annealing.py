@@ -5,7 +5,7 @@ from collections import defaultdict
 
 class SimulatedAnnealing:
     def __init__(self, problem, initial_temperature = 1000, min_temperature = 0.01,
-                 max_iteration = 100, steps = 50, cooling_parameter = 0.98, seed = 42):
+                 max_iteration = 100, steps = 50, cooling_parameter = 0.98):
 
         self.init_temp = initial_temperature
         self.problem = problem
@@ -13,7 +13,6 @@ class SimulatedAnnealing:
         self.max_iter = max_iteration
         self.steps = steps
         self.cool = cooling_parameter
-        random.seed(seed)
 
     def evaluate(self, target):
         return self.problem.decode(target[1])
