@@ -1,12 +1,11 @@
 import random
 import numpy as np
 import copy
-from functions import decode_schedule
 from collections import defaultdict
 
 class SimulatedAnnealing:
     def __init__(self, problem, initial_temperature = 1000, min_temperature = 0.01,
-                 max_iteration = 100, steps = 50, cooling_parameter = 0.98):
+                 max_iteration = 100, steps = 50, cooling_parameter = 0.98, seed = 42):
 
         self.init_temp = initial_temperature
         self.problem = problem
@@ -14,47 +13,43 @@ class SimulatedAnnealing:
         self.max_iter = max_iteration
         self.steps = steps
         self.cool = cooling_parameter
+        random.seed(seed)
 
     def evaluate(self, target):
-        return self.problem.decode(target[0], target[1])
+        return self.problem.decode(target[1])
 
     def random_swap(self, target):
         new_target = copy.deepcopy(target)
-        new_assign, new_prio = new_target
-
-        schedule = decode_schedule(
-            self.problem.jobs_data,
-            self.problem.release,
-            self.problem.setup_times,
-            new_assign,
-            new_prio)
+        new_assign, new_times = new_target
+        schedule = self.problem.generate_schedule(new_assign, new_times)
 
         by_machine = defaultdict(list)
         for j, ops in schedule.items():
-            for o, m, st, _ in ops:
-                by_machine[m].append((st, j, o))
+            for o, m, st, end in ops:
+                by_machine[m].append((st, j, o, end))
 
-        # 2. 隨機挑一台有 >=2 道工序的機台
         machines = [m for m, lst in by_machine.items() if len(lst) > 1]
         if not machines:
-            return new_assign, new_prio
-        m = random.choice(machines)
+            return new_assign, new_times
 
-        # 3. 排序後隨機選一個「當前」索引 idx，與 idx-1 的工序做交換
+        m = random.choice(machines)
         ops = sorted(by_machine[m], key = lambda x: x[0])
         idx = random.randint(1, len(ops) - 1)
-        _, j_cur, o_cur = ops[idx]
-        _, j_pre, o_pre = ops[idx - 1]
-        if j_cur != j_pre:
-            new_prio[(j_cur, o_cur)], new_prio[(j_pre, o_pre)] = new_prio[(j_pre, o_pre)], new_prio[(j_cur, o_cur)]
+        st_cur, j_cur, o_cur, end_cur = ops[idx]
+        st_pre, j_pre, o_pre, end_pre = ops[idx - 1]
+        j_temp, o_temp = None, None
+        if idx >= 2:
+            _, j_temp, o_temp, _ = ops[idx - 2]
 
-        for j in (j_pre, j_cur):
-            ops_count = len(self.problem.jobs_data[j])
-            # 收集所有 op 的 priority，排序
-            sorted_vals = sorted(new_prio[(j, o)] for o in range(ops_count))
-            # 依序寫回，保證 op0 < op1 < ...
-            for o, val in enumerate(sorted_vals):
-                new_prio[(j, o)] = val
+        if j_cur != j_pre:
+            if j_temp is not None:
+                temp = st_pre + self.problem.setup_times[m[:2]][((j_temp, o_temp), (j_cur, o_cur))]
+                new_times[(j_cur, o_cur)] = (temp, temp + end_cur - st_cur)
+            else:
+                new_times[(j_cur, o_cur)] = (st_pre, st_pre + end_cur - st_cur)
+
+            s = new_times[(j_cur, o_cur)][1] + self.problem.setup_times[m[:2]][((j_cur, o_cur), (j_pre, o_pre))]
+            new_times[(j_pre, o_pre)] = (s, s + end_pre - st_pre)
 
         return new_target
 

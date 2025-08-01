@@ -1,25 +1,27 @@
 import random
 import copy
-from functions import decode_schedule
-from collections import defaultdict
+from collections import defaultdict, deque
 
 class GeneticAlgorithm:
-    def __init__(self, problem, pop_size = 100, max_generations = 50, cross_p = 0.8, mut_p = 0.2):
+    def __init__(self, problem, pop_size = 100, max_generations = 50, cross_p = 0.8, mut_p = 0.2, seed = 42):
         self.problem = problem
         self.pop_size = pop_size
         self.gen_max = max_generations
         self.cross_p = cross_p
         self.mut_p = mut_p
         self.population = []
+        random.seed(seed)
 
     def init_population(self, seed_solution):
-        self.population.append(self.problem.encode(seed_solution))
+        self.population.append(seed_solution)
         for _ in range(self.pop_size - 1):
-            self.population.append(self.problem.encode())
+            if random.random() < 0.5:
+                self.population.append(self.problem.encode())
+            else:
+                self.population.append(self.mutate(seed_solution))
 
     def evaluate_fitness(self, target):
-        fitness = self.problem.decode(target[0], target[1])
-        return fitness
+        return self.problem.decode(target[1])
 
     def mutate(self, target):
         new_target = copy.deepcopy(target)
@@ -33,71 +35,87 @@ class GeneticAlgorithm:
             new_target[0][(j,o)] = f"{p}_{k}"
 
         if random.random() < self.mut_p:
-            new_assign, new_prio = new_target
-            schedule = decode_schedule(
-                self.problem.jobs_data,
-                self.problem.release,
-                self.problem.setup_times,
-                new_assign,
-                new_prio)
-
+            new_assign, new_times = new_target
+            schedule = self.problem.generate_schedule(new_assign, new_times)
             by_machine = defaultdict(list)
             for j, ops in schedule.items():
-                for o, m, st, _ in ops:
-                    by_machine[m].append((st, j, o))
+                for o, m, st, end in ops:
+                    by_machine[m].append((st, j, o, end))
 
-            # 2. 隨機挑一台有 >=2 道工序的機台
             machines = [m for m, lst in by_machine.items() if len(lst) > 1]
             if not machines:
-                return new_assign, new_prio
+                return new_assign, new_times
+
             m = random.choice(machines)
-
-            # 3. 排序後隨機選一個「當前」索引 idx，與 idx-1 的工序做交換
-            ops = sorted(by_machine[m], key=lambda x: x[0])
+            ops = sorted(by_machine[m], key = lambda x: x[0])
             idx = random.randint(1, len(ops) - 1)
-            _, j_cur, o_cur = ops[idx]
-            _, j_pre, o_pre = ops[idx - 1]
-            if j_cur != j_pre:
-                new_prio[(j_cur, o_cur)], new_prio[(j_pre, o_pre)] = new_prio[(j_pre, o_pre)], new_prio[(j_cur, o_cur)]
+            st_cur, j_cur, o_cur, end_cur = ops[idx]
+            st_pre, j_pre, o_pre, end_pre = ops[idx - 1]
+            j_temp, o_temp = None, None
+            if idx >= 2:
+                _, j_temp, o_temp, _ = ops[idx - 2]
 
-            for j in (j_pre, j_cur):
-                ops_count = len(self.problem.jobs_data[j])
-                # 收集所有 op 的 priority，排序
-                sorted_vals = sorted(new_prio[(j, o)] for o in range(ops_count))
-                # 依序寫回，保證 op0 < op1 < ...
-                for o, val in enumerate(sorted_vals):
-                    new_prio[(j, o)] = val
+            if j_cur != j_pre:
+                if j_temp:
+                    new_times[(j_cur, o_cur)] = (st_pre + self.problem.setup_times[m[:2]][((j_temp, o_temp), (j_cur, o_cur))], st_pre + end_cur - st_cur)
+                else:
+                    new_times[(j_cur, o_cur)] = (st_pre, st_pre + end_cur - st_cur)
+
+                s = new_times[(j_cur, o_cur)][1] + self.problem.setup_times[m[:2]][((j_cur, o_cur), (j_pre, o_pre))]
+                new_times[(j_pre, o_pre)] = (s, s + end_pre - st_pre)
 
         return new_target
 
     def linear_order_crossover(self, parent1, parent2):
-        jobs = list(self.problem.jobs_data.keys())
-        size = len(jobs)
+        parent1_times, parent2_times = parent1[1], parent2[1]
+        parent1_ops, parent2_ops = [], []
+
+        for (j, o), (st, end) in parent1_times.items():
+            parent1_ops.append((j, o, st))
+
+        parent1_ops.sort(key = lambda x: x[2])
+
+        for (j, o), (st, end) in parent2_times.items():
+            parent2_ops.append((j, o, st))
+
+        parent2_ops.sort(key = lambda x: x[2])
+
+        size = len(parent1_ops)
         start, end = sorted(random.sample(range(size), 2))
+        child = [None] * size
 
-        # Step 1: 拿一段 job base 排序片段
-        segment_jobs = jobs[start:end+1]
-        segment_bases = {j: parent1[1][(j, 0)] for j in segment_jobs}
+        # Step 1: 拿一段排序片段
+        for i in range(start, end + 1):
+            child[i] = (parent1_ops[i][0], parent1_ops[i][1])
 
-        # Step 2: 剩餘 job 由 parent2 補完，保持原順序
-        remainder_jobs = [j for j in jobs if j not in segment_jobs]
-        remainder_bases = {j: parent2[1][(j, 0)] for j in remainder_jobs}
+        used_ops = [(j,o) for (j, o) in child[start:end + 1]]
+        # Step 2: 剩餘由parent2補完，保持原順序
+        idx = 0
+        for (j, o, st) in parent2_ops:
+            if (j,o) not in used_ops:
+                while start <= idx <= end:
+                    idx += 1
+                if idx < size:
+                    child[idx] = (j, o)
+                    idx += 1
 
-        # Step 3: 合併 base 順序
-        job_order = remainder_jobs[:start] + segment_jobs + remainder_jobs[start:]
-        combined_bases = {**remainder_bases, **segment_bases}
+        groups = defaultdict(list)
+        for (x, y) in child:
+            groups[x].append((x, y))
 
-        # Step 4: 為每個 job 建立 priority[(j,o)]，保工序順序
-        child_priority = {}
-        for j in job_order:
-            base = combined_bases[j]
-            for o in range(len(self.problem.jobs_data[j])):
-                child_priority[(j, o)] = base + 0.1 * o
+        for x in groups:
+            groups[x].sort(key = lambda t: t[1])
+            groups[x] = deque(groups[x])
 
-        child = (parent1[0], child_priority)
-        child = self.mutate(child)
+        child_priority = []
+        for x, _ in child:
+            child_priority.append(groups[x].popleft())
 
-        return child
+        child_machine, child_times = self.problem.encode(priority = child_priority)
+        res = [child_machine, child_times]
+        res = self.mutate(res)
+
+        return res
 
     def roulette_selection(self, number = 2):
         fitness_values = [1.0 / (self.evaluate_fitness(target) + 1e-6) for target in self.population]
@@ -132,14 +150,11 @@ class GeneticAlgorithm:
             next_pop = []
             while len(next_pop) < self.pop_size:
                 p1, p2 = self.roulette_selection()
+                next_pop.extend([p1, p2])
 
                 if random.random() < self.cross_p:
-                    c1 = self.linear_order_crossover(p1, p2)
-                    c2 = self.linear_order_crossover(p1, p2)
-                else:
-                    c1, c2 = p1, p2
-
-                next_pop.extend([c1, c2])
+                    child = self.linear_order_crossover(p1, p2)
+                    next_pop.append(child)
 
             self.population = next_pop[:self.pop_size]
 
