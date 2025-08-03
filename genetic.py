@@ -14,7 +14,7 @@ class GeneticAlgorithm:
     def init_population(self, seed_solution):
         self.population.append(seed_solution)
         for _ in range(self.pop_size - 1):
-            if random.random() < 0.5:
+            if random.random() < self.mut_p:
                 self.population.append(self.problem.encode())
             else:
                 self.population.append(self.mutate(seed_solution))
