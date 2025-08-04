@@ -93,9 +93,9 @@ def solve_fjs_with_parallel_machines(jobs_data, release_dates, due_dates,
 
     return None, None
 
-def generate_random_instance(num_jobs = 20, centers = ('C1','C2','C3',"C4"),
-                             center_caps = {'C1':2,'C2':2,'C3':2,"C4":2},
-                             num_ops = {'C1':1,'C2':1,'C3':1,"C4":1}):
+def generate_random_instance(num_jobs = 20, centers = ('C1','C2','C3',"C4","C5","C6"),
+                             center_caps = {'C1':2,'C2':2,'C3':2,"C4":2,"C5":2,"C6":2},
+                             num_ops = {'C1':1,'C2':1,'C3':1,"C4":1,"C5":1,"C6":1}):
 
     jobs_data, release_dates, due_dates, weights = {}, {}, {}, {}
     setup_times = {p:{} for p in centers}
@@ -103,7 +103,8 @@ def generate_random_instance(num_jobs = 20, centers = ('C1','C2','C3',"C4"),
     for j in range(num_jobs):
         ops = []
         total_dur = 0
-        for c in centers:
+        sample = sorted(random.sample(centers, 4), key = lambda s: int(s[1]))
+        for c in sample:
             for _ in range(num_ops[c]):
                 dur = random.randint(20, 50)
                 total_dur += dur
