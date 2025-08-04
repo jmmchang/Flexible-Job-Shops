@@ -35,33 +35,41 @@ class GeneticAlgorithm:
 
         if random.random() < self.mut_p:
             new_assign, new_times = new_target
+            priority = []
             schedule = self.problem.generate_schedule(new_assign, new_times)
             by_machine = defaultdict(list)
+
             for j, ops in schedule.items():
                 for o, m, st, end in ops:
-                    by_machine[m].append((st, j, o, end))
+                    priority.append((j, o, st))
+                    by_machine[m].append((j, o, st))
 
             machines = [m for m, lst in by_machine.items() if len(lst) > 1]
             if not machines:
                 return new_assign, new_times
 
             m = random.choice(machines)
-            ops = sorted(by_machine[m], key = lambda x: x[0])
-            idx = random.randint(1, len(ops) - 1)
-            st_cur, j_cur, o_cur, end_cur = ops[idx]
-            st_pre, j_pre, o_pre, end_pre = ops[idx - 1]
-            j_temp, o_temp = None, None
-            if idx >= 2:
-                _, j_temp, o_temp, _ = ops[idx - 2]
+            priority.sort(key = lambda x: x[2])
+            ops_m = sorted(by_machine[m], key = lambda x: x[2])
+            idx = random.randint(1, len(ops_m) - 1)
+            j_cur, o_cur, st_cur = ops_m[idx]
+            j_pre, o_pre, st_pre = ops_m[idx - 1]
+            priority[priority.index((j_cur,o_cur,st_cur))], priority[priority.index((j_pre,o_pre,st_pre))] = (j_pre, o_pre, st_pre), (j_cur, o_cur, st_cur)
 
-            if j_cur != j_pre:
-                if j_temp:
-                    new_times[(j_cur, o_cur)] = (st_pre + self.problem.setup_times[m[:2]][((j_temp, o_temp), (j_cur, o_cur))], st_pre + end_cur - st_cur)
-                else:
-                    new_times[(j_cur, o_cur)] = (st_pre, st_pre + end_cur - st_cur)
+            groups = defaultdict(list)
+            for (x, y, _) in priority:
+                groups[x].append((x, y))
 
-                s = new_times[(j_cur, o_cur)][1] + self.problem.setup_times[m[:2]][((j_cur, o_cur), (j_pre, o_pre))]
-                new_times[(j_pre, o_pre)] = (s, s + end_pre - st_pre)
+            for x in groups:
+                groups[x].sort(key = lambda t: t[1])
+                groups[x] = deque(groups[x])
+
+            grouped_priority = []
+            for x, _, _ in priority:
+                grouped_priority.append(groups[x].popleft())
+
+            new_machine, new_times = self.problem.encode(priority = grouped_priority)
+            new_target = [new_machine, new_times]
 
         return new_target
 

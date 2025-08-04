@@ -93,7 +93,7 @@ def solve_fjs_with_parallel_machines(jobs_data, release_dates, due_dates,
 
     return None, None
 
-def generate_random_instance(num_jobs = 20, centers = ('C1','C2','C3',"C4","C5","C6"),
+def generate_random_instance(num_jobs = 25, centers = ('C1','C2','C3',"C4","C5","C6"),
                              center_caps = {'C1':2,'C2':2,'C3':2,"C4":2,"C5":2,"C6":2},
                              num_ops = {'C1':1,'C2':1,'C3':1,"C4":1,"C5":1,"C6":1}):
 
@@ -111,7 +111,7 @@ def generate_random_instance(num_jobs = 20, centers = ('C1','C2','C3',"C4","C5",
                 ops.append((dur, c))
 
         jobs_data[j] = ops
-        due_dates[j]     = random.randint(np.floor(total_dur * 2), np.floor(total_dur * 3))
+        due_dates[j]     = random.randint(np.floor(total_dur * 2), np.floor(total_dur * 4))
         release_dates[j] = random.randint(0, (due_dates[j] - total_dur) // 2)
         weights[j]       = random.randint(1, 5)
 
