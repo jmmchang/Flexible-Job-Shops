@@ -1,4 +1,5 @@
 import itertools
+import collections
 from ortools.sat.python import cp_model
 import random
 import numpy as np
@@ -16,28 +17,34 @@ def solve_fjs_with_parallel_machines(jobs_data, release_dates, due_dates,
             center_of[m] = p
 
     # 2. 決策變數
-    horizon = sum(d for ops in jobs_data.values() for d,_ in ops) + max(release_dates.values())
+    horizon = sum(d for ops in jobs_data.values() for d, _ in ops) + max(release_dates.values())
     start, end, assign, tardiness = {}, {}, {}, {}
 
+    # Named tuple to store information about created variables.
+    task_type = collections.namedtuple("task_type", "start end interval")
+    # Creates job intervals and add to the corresponding machine lists.
+    all_tasks = {}
+
     for j, ops in jobs_data.items():
-        for o, (dur, centers) in enumerate(ops):
-            start[j, o] = model.NewIntVar(release_dates[j], horizon - dur, f"s_j{j}o{o}")
-            end[j, o]   = model.NewIntVar(release_dates[j] + dur, horizon, f"e_j{j}o{o}")
-            # 只為允許的機台建 assign 變數
-            valid = [m for m in machines if center_of[m] in centers]
+        for o, (duration, center) in enumerate(ops):
+            suffix = f"s_j{j}o{o}"
+            start_var = model.new_int_var(release_dates[j], horizon, "start" + suffix)
+            end_var = model.new_int_var(release_dates[j], horizon, "end" + suffix)
+            valid = [m for m in machines if center_of[m] in center]
             bools = []
             for m in valid:
-                b = model.NewBoolVar(f"a_j{j}o{o}_m{m}")
+                b = model.new_bool_var(f"a_j{j}o{o}_m{m}")
                 assign[j, o, m] = b
                 bools.append(b)
-                model.Add(end[j, o] == start[j, o] + dur).OnlyEnforceIf(b)
 
-            model.AddExactlyOne(bools)
+            model.add_exactly_one(bools)
+            interval_var = model.new_interval_var(start_var, duration, end_var, "interval" + suffix)
+            all_tasks[j, o] = task_type(start = start_var, end = end_var, interval = interval_var)
 
     # 3. 工序順序
     for j, ops in jobs_data.items():
         for o in range(len(ops) - 1):
-            model.Add(start[j, o + 1] >= end[j, o])
+            model.add(all_tasks[j, o + 1].start >= all_tasks[j, o].end)
 
     # 4. 機台互斥 + 序依換線
     for m in machines:
@@ -45,56 +52,48 @@ def solve_fjs_with_parallel_machines(jobs_data, release_dates, due_dates,
                         for o, (_, centers) in enumerate(ops)
                         if center_of[m] in centers]
         for (j1, o1), (j2, o2) in itertools.combinations(tasks, 2):
-            b = model.NewBoolVar(f"ord_{j1}o{o1}_{j2}o{o2}_on_{m}")
+            b = model.new_bool_var(f"ord_{j1}o{o1}_{j2}o{o2}_on_{m}")
             p = center_of[m]
-            s12 = setup_times.get(p, {}).get(((j1, o1), (j2, o2)), 0)
-            s21 = setup_times.get(p, {}).get(((j2, o2), (j1, o1)), 0)
-
-            model.Add(start[j2, o2] >= end[j1, o1] + s12)\
-                 .OnlyEnforceIf([assign[j1, o1, m],
-                                 assign[j2, o2, m], b])
-            model.Add(start[j1, o1] >= end[j2, o2] + s21)\
-                 .OnlyEnforceIf([assign[j1, o1, m],
-                                 assign[j2, o2, m], b.Not()])
+            s12 = setup_times[p][((j1, o1), (j2, o2))]
+            s21 = setup_times[p][((j2, o2), (j1, o1))]
+            model.add(all_tasks[j2, o2].start >= all_tasks[j1, o1].end + s12).only_enforce_if([assign[j1, o1, m], assign[j2, o2, m], b])
+            model.add(all_tasks[j1, o1].start >= all_tasks[j2, o2].end + s21).only_enforce_if([assign[j1, o1, m], assign[j2, o2, m], b.Not()])
 
     # 5. 拖期與目標
     for j, ops in jobs_data.items():
         last = len(ops) - 1
-        tardiness[j] = model.NewIntVar(0, horizon, f"T_j{j}")
-        model.add_max_equality(tardiness[j],[0, end[j, last] - due_dates[j]],)
+        tardiness[j] = model.new_int_var(0, horizon, f"T_j{j}")
+        model.add_max_equality(tardiness[j],[0, all_tasks[j, last].end - due_dates[j]])
 
     makespan = model.new_int_var(0, horizon, "makespan")
     model.add_max_equality(
         makespan,
-        [end[j, len(jobs_data[j]) - 1] for j in range(len(jobs_data))],
+        [all_tasks[j, len(jobs_data[j]) - 1].end for j in range(len(jobs_data))],
     )
-    model.Minimize(alpha * makespan + (1-alpha) * sum(weights[j] * tardiness[j] for j in jobs_data))
+    model.minimize(alpha * makespan + (1 - alpha) * sum(weights[j] * tardiness[j] for j in jobs_data))
 
     # 6. 求解
     solver = cp_model.CpSolver()
     solver.parameters.max_time_in_seconds = 1
-    status = solver.Solve(model)
+    status = solver.solve(model)
 
     if status in (cp_model.OPTIMAL, cp_model.FEASIBLE):
         schedule = {}
         for j, ops in jobs_data.items():
             schedule[j] = []
             for o in range(len(ops)):
-                st = solver.Value(start[j, o])
-                en = solver.Value(end[j, o])
-                # 只在 assign 有定義的機台中找被選中的那一台
                 m_assigned = next(
                     m for m in machines
-                    if (j, o, m) in assign
-                    and solver.Value(assign[j, o, m]) == 1
+                    if (j, o, m) in assign and solver.value(assign[j, o, m]) == 1
                 )
-                schedule[j].append((o, m_assigned, st, en))
-        return schedule, solver.ObjectiveValue()
+                schedule[j].append((o, m_assigned, solver.value(all_tasks[j, o].start), solver.value(all_tasks[j, o].end)))
+
+        return schedule, solver.objective_value
 
     return None, None
 
-def generate_random_instance(num_jobs = 25, centers = ('C1','C2','C3',"C4","C5","C6"),
-                             center_caps = {'C1':2,'C2':2,'C3':2,"C4":2,"C5":2,"C6":2},
+def generate_random_instance(num_jobs = 50, centers = ('C1','C2','C3',"C4","C5","C6"),
+                             center_caps = {'C1':3,'C2':2,'C3':3,"C4":2,"C5":3,"C6":2},
                              num_ops = {'C1':1,'C2':1,'C3':1,"C4":1,"C5":1,"C6":1}):
 
     jobs_data, release_dates, due_dates, weights = {}, {}, {}, {}
@@ -120,8 +119,9 @@ def generate_random_instance(num_jobs = 25, centers = ('C1','C2','C3',"C4","C5",
         all_ops = [(j, o) for j, ops in jobs_data.items()
                           for o in range(len(ops))
                           if p in ops[o][1]]
-        for (j1,o1),(j2,o2) in itertools.permutations(all_ops, 2):
-            setup_times[p][((j1,o1),(j2,o2))] = random.randint(1, 10)
+
+        for (j1,o1), (j2,o2) in itertools.permutations(all_ops, 2):
+            setup_times[p][((j1,o1),(j2,o2))] = random.randint(5, 10)
 
     return jobs_data, release_dates, due_dates, weights, setup_times, center_caps
 
