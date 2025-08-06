@@ -53,9 +53,8 @@ def solve_fjs_with_parallel_machines(jobs_data, release_dates, due_dates,
                         if center_of[m] in centers]
         for (j1, o1), (j2, o2) in itertools.combinations(tasks, 2):
             b = model.new_bool_var(f"ord_{j1}o{o1}_{j2}o{o2}_on_{m}")
-            p = center_of[m]
-            s12 = setup_times[p][((j1, o1), (j2, o2))]
-            s21 = setup_times[p][((j2, o2), (j1, o1))]
+            s12 = setup_times[m][((j1, o1), (j2, o2))]
+            s21 = setup_times[m][((j2, o2), (j1, o1))]
             model.add(all_tasks[j2, o2].start >= all_tasks[j1, o1].end + s12).only_enforce_if([assign[j1, o1, m], assign[j2, o2, m], b])
             model.add(all_tasks[j1, o1].start >= all_tasks[j2, o2].end + s21).only_enforce_if([assign[j1, o1, m], assign[j2, o2, m], b.Not()])
 
@@ -74,7 +73,7 @@ def solve_fjs_with_parallel_machines(jobs_data, release_dates, due_dates,
 
     # 6. 求解
     solver = cp_model.CpSolver()
-    solver.parameters.max_time_in_seconds = 1
+    solver.parameters.max_time_in_seconds = 5
     status = solver.solve(model)
 
     if status in (cp_model.OPTIMAL, cp_model.FEASIBLE):
@@ -92,12 +91,19 @@ def solve_fjs_with_parallel_machines(jobs_data, release_dates, due_dates,
 
     return None, None
 
-def generate_random_instance(num_jobs = 50, centers = ('C1','C2','C3',"C4","C5","C6"),
+def generate_random_instance(num_jobs = 30, centers = ('C1','C2','C3',"C4","C5","C6"),
                              center_caps = {'C1':3,'C2':2,'C3':3,"C4":2,"C5":3,"C6":2},
                              num_ops = {'C1':1,'C2':1,'C3':1,"C4":1,"C5":1,"C6":1}):
 
     jobs_data, release_dates, due_dates, weights = {}, {}, {}, {}
-    setup_times = {p:{} for p in centers}
+    machines = []
+
+    for p, cap in center_caps.items():
+        for k in range(cap):
+            m = f"{p}_{k}"
+            machines.append(m)
+
+    setup_times = {m:{} for m in machines}
 
     for j in range(num_jobs):
         ops = []
@@ -110,18 +116,18 @@ def generate_random_instance(num_jobs = 50, centers = ('C1','C2','C3',"C4","C5",
                 ops.append((dur, c))
 
         jobs_data[j] = ops
-        due_dates[j]     = random.randint(np.floor(total_dur * 2), np.floor(total_dur * 4))
+        due_dates[j]     = random.randint(np.floor(total_dur * 2), np.floor(total_dur * 5))
         release_dates[j] = random.randint(0, (due_dates[j] - total_dur) // 2)
         weights[j]       = random.randint(1, 5)
 
     # 隨機設定序依換線時間
-    for p in centers:
+    for m in machines:
         all_ops = [(j, o) for j, ops in jobs_data.items()
                           for o in range(len(ops))
-                          if p in ops[o][1]]
+                          if m.split('_')[0] in ops[o][1]]
 
         for (j1,o1), (j2,o2) in itertools.permutations(all_ops, 2):
-            setup_times[p][((j1,o1),(j2,o2))] = random.randint(5, 10)
+            setup_times[m][((j1,o1),(j2,o2))] = random.randint(5, 10)
 
     return jobs_data, release_dates, due_dates, weights, setup_times, center_caps
 
