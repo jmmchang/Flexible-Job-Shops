@@ -1,6 +1,5 @@
 import random
-import numpy as np
-import copy
+from numpy import exp
 from collections import defaultdict, deque
 
 class SimulatedAnnealing:
@@ -70,7 +69,7 @@ class SimulatedAnnealing:
                 new = self.random_swap(curr)
                 new_obj = self.evaluate(new)
                 diff = new_obj - curr_obj
-                prob = min(1, np.exp(-diff / t))
+                prob = min(1, exp(-diff / t))
 
                 if prob >= random.uniform(0, 1):
                     curr = new

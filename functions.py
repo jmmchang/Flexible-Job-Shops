@@ -1,8 +1,8 @@
-import itertools
-import collections
+from itertools import combinations, permutations
+from collections import namedtuple
 from ortools.sat.python import cp_model
+from numpy import floor
 import random
-import numpy as np
 import matplotlib.pyplot as plt
 
 def solve_fjs_with_parallel_machines(jobs_data, release_dates, due_dates,
@@ -18,10 +18,10 @@ def solve_fjs_with_parallel_machines(jobs_data, release_dates, due_dates,
 
     # 2. 決策變數
     horizon = sum(d for ops in jobs_data.values() for d, _ in ops) + max(release_dates.values())
-    start, end, assign, tardiness = {}, {}, {}, {}
+    assign, tardiness = {}, {}
 
     # Named tuple to store information about created variables.
-    task_type = collections.namedtuple("task_type", "start end interval")
+    task_type = namedtuple("task_type", "start end interval")
     # Creates job intervals and add to the corresponding machine lists.
     all_tasks = {}
 
@@ -51,7 +51,7 @@ def solve_fjs_with_parallel_machines(jobs_data, release_dates, due_dates,
         tasks = [(j, o) for j, ops in jobs_data.items()
                         for o, (_, centers) in enumerate(ops)
                         if center_of[m] in centers]
-        for (j1, o1), (j2, o2) in itertools.combinations(tasks, 2):
+        for (j1, o1), (j2, o2) in combinations(tasks, 2):
             b = model.new_bool_var(f"ord_{j1}o{o1}_{j2}o{o2}_on_{m}")
             s12 = setup_times[m][((j1, o1), (j2, o2))]
             s21 = setup_times[m][((j2, o2), (j1, o1))]
@@ -73,7 +73,7 @@ def solve_fjs_with_parallel_machines(jobs_data, release_dates, due_dates,
 
     # 6. 求解
     solver = cp_model.CpSolver()
-    solver.parameters.max_time_in_seconds = 5
+    solver.parameters.max_time_in_seconds = 60
     status = solver.solve(model)
 
     if status in (cp_model.OPTIMAL, cp_model.FEASIBLE):
@@ -92,8 +92,7 @@ def solve_fjs_with_parallel_machines(jobs_data, release_dates, due_dates,
     return None, None
 
 def generate_random_instance(num_jobs = 30, centers = ('C1','C2','C3',"C4","C5","C6"),
-                             center_caps = {'C1':3,'C2':2,'C3':3,"C4":2,"C5":3,"C6":2},
-                             num_ops = {'C1':1,'C2':1,'C3':1,"C4":1,"C5":1,"C6":1}):
+                             center_caps = {'C1':3,'C2':2,'C3':3,"C4":2,"C5":3,"C6":2}):
 
     jobs_data, release_dates, due_dates, weights = {}, {}, {}, {}
     machines = []
@@ -110,13 +109,12 @@ def generate_random_instance(num_jobs = 30, centers = ('C1','C2','C3',"C4","C5",
         total_dur = 0
         sample = sorted(random.sample(centers, 4), key = lambda s: int(s[1]))
         for c in sample:
-            for _ in range(num_ops[c]):
-                dur = random.randint(20, 50)
-                total_dur += dur
-                ops.append((dur, c))
+            dur = random.randint(20, 50)
+            total_dur += dur
+            ops.append((dur, c))
 
         jobs_data[j] = ops
-        due_dates[j]     = random.randint(np.floor(total_dur * 2), np.floor(total_dur * 5))
+        due_dates[j]     = random.randint(floor(total_dur * 2), floor(total_dur * 5))
         release_dates[j] = random.randint(0, (due_dates[j] - total_dur) // 2)
         weights[j]       = random.randint(1, 5)
 
@@ -126,7 +124,7 @@ def generate_random_instance(num_jobs = 30, centers = ('C1','C2','C3',"C4","C5",
                           for o in range(len(ops))
                           if m.split('_')[0] in ops[o][1]]
 
-        for (j1,o1), (j2,o2) in itertools.permutations(all_ops, 2):
+        for (j1,o1), (j2,o2) in permutations(all_ops, 2):
             setup_times[m][((j1,o1),(j2,o2))] = random.randint(5, 10)
 
     return jobs_data, release_dates, due_dates, weights, setup_times, center_caps
@@ -210,7 +208,7 @@ class SchedulingProblem:
 
                     earliest[(j, o)] = t
 
-                    # 選擇啟動時間最小者
+                # 選擇啟動時間最小者
                 sel = min(earliest, key=earliest.get)
                 st = earliest[sel]
                 dur, _ = self.jobs_data[sel[0]][sel[1]]
