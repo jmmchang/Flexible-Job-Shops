@@ -3,6 +3,21 @@ from numpy import exp
 from collections import defaultdict, deque
 
 class SimulatedAnnealing:
+    """
+    A Simulated Annealing template for scheduling problems.
+
+    Attributes:
+        problem:        Problem interface providing
+                            - encode(assign=None, priority=None) -> (machine_assign, time_dict)
+                            - decode(time_dict) -> objective_value
+                            - generate_schedule(assign, time_dict) -> detailed schedule
+        init_temp:      Starting temperature
+        min_temp:       Temperature threshold to stop the annealing
+        max_iter:       Maximum number of cooling iterations
+        steps:          Number of neighbor samples per temperature
+        cool:           Cooling factor (0 < cool < 1)
+    """
+
     def __init__(self, problem, initial_temperature = 1000, min_temperature = 0.01,
                  max_iteration = 100, steps = 50, cooling_parameter = 0.98):
 
@@ -14,9 +29,24 @@ class SimulatedAnnealing:
         self.cool = cooling_parameter
 
     def evaluate(self, target):
+        """
+        Evaluate the objective (energy) of a solution.
+        """
+
         return self.problem.decode(target[1])
 
     def random_swap(self, target):
+        """
+        Generate a neighbor by swapping two adjacent operations on a random machine.
+        Steps:
+            1. Build the full schedule to inspect start times.
+            2. Group operations by machine.
+            3. Pick a machine with at least two operations.
+            4. Swap a random adjacent pair in time order.
+            5. Reconstruct a job-operation priority list.
+            6. Re-encode to get new assignment and times.
+        """
+
         new_assign, new_times = target
         priority = []
         schedule = self.problem.generate_schedule(new_assign, new_times)
@@ -57,6 +87,10 @@ class SimulatedAnnealing:
         return new_target
 
     def run(self, seed_solution):
+        """
+        Execute the Simulated Annealing algorithm.
+        """
+
         t = self.init_temp
         k = 0
         curr = seed_solution

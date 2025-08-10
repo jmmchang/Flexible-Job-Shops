@@ -7,8 +7,27 @@ import matplotlib.pyplot as plt
 
 def solve_fjs_with_parallel_machines(jobs_data, release_dates, due_dates,
                                      weights, setup_times, center_caps, alpha = 0.5):
+    """
+    Solves a Flexible Job Shop Scheduling (FJS) problem with parallel machines and sequence-dependent setup times
+    using Google OR-Tools CP-SAT solver.
+
+    Args:
+        jobs_data: Dictionary mapping job ID to a list of operations, each as (duration, center).
+        release_dates: Dictionary mapping job ID to its release time.
+        due_dates: Dictionary mapping job ID to its due date.
+        weights: Dictionary mapping job ID to its tardiness weight.
+        setup_times: Dictionary mapping machine name to a dictionary of setup times between operation pairs.
+        center_caps: Dictionary mapping center name to its number of machines.
+        alpha: Weighting factor between makespan and total weighted tardiness (0 < alpha < 1).
+
+    Returns:
+        schedule: Dictionary mapping job ID to a list of scheduled operations as (op_index, machine, start, end).
+        objective_value: The value of the objective function.
+        If no feasible solution is found, returns (None, None).
+    """
+
     model = cp_model.CpModel()
-    # 1. 生成實體機台
+    # Create machines based on center capacities
     machines, center_of = [], {}
     for p, cap in center_caps.items():
         for k in range(cap):
@@ -16,7 +35,7 @@ def solve_fjs_with_parallel_machines(jobs_data, release_dates, due_dates,
             machines.append(m)
             center_of[m] = p
 
-    # 2. 決策變數
+    # Decision variables
     horizon = sum(d for ops in jobs_data.values() for d, _ in ops) + max(release_dates.values())
     assign, tardiness = {}, {}
 
@@ -25,6 +44,7 @@ def solve_fjs_with_parallel_machines(jobs_data, release_dates, due_dates,
     # Creates job intervals and add to the corresponding machine lists.
     all_tasks = {}
 
+    # Create interval variables for each operation and machine assignment booleans
     for j, ops in jobs_data.items():
         for o, (duration, center) in enumerate(ops):
             suffix = f"s_j{j}o{o}"
@@ -41,12 +61,12 @@ def solve_fjs_with_parallel_machines(jobs_data, release_dates, due_dates,
             interval_var = model.new_interval_var(start_var, duration, end_var, "interval" + suffix)
             all_tasks[j, o] = task_type(start = start_var, end = end_var, interval = interval_var)
 
-    # 3. 工序順序
+    # Enforce operations order
     for j, ops in jobs_data.items():
         for o in range(len(ops) - 1):
             model.add(all_tasks[j, o + 1].start >= all_tasks[j, o].end)
 
-    # 4. 機台互斥 + 序依換線
+    # Machine mutual exclusion and sequence-dependent setup constraints
     for m in machines:
         tasks = [(j, o) for j, ops in jobs_data.items()
                         for o, (_, centers) in enumerate(ops)
@@ -58,12 +78,13 @@ def solve_fjs_with_parallel_machines(jobs_data, release_dates, due_dates,
             model.add(all_tasks[j2, o2].start >= all_tasks[j1, o1].end + s12).only_enforce_if([assign[j1, o1, m], assign[j2, o2, m], b])
             model.add(all_tasks[j1, o1].start >= all_tasks[j2, o2].end + s21).only_enforce_if([assign[j1, o1, m], assign[j2, o2, m], b.Not()])
 
-    # 5. 拖期與目標
+    # Tardiness
     for j, ops in jobs_data.items():
         last = len(ops) - 1
         tardiness[j] = model.new_int_var(0, horizon, f"T_j{j}")
         model.add_max_equality(tardiness[j],[0, all_tasks[j, last].end - due_dates[j]])
 
+    # Makespan
     makespan = model.new_int_var(0, horizon, "makespan")
     model.add_max_equality(
         makespan,
@@ -71,7 +92,7 @@ def solve_fjs_with_parallel_machines(jobs_data, release_dates, due_dates,
     )
     model.minimize(alpha * makespan + (1 - alpha) * sum(weights[j] * tardiness[j] for j in jobs_data))
 
-    # 6. 求解
+    # Solve the model
     solver = cp_model.CpSolver()
     solver.parameters.max_time_in_seconds = 60
     status = solver.solve(model)
@@ -93,6 +114,22 @@ def solve_fjs_with_parallel_machines(jobs_data, release_dates, due_dates,
 
 def generate_random_instance(num_jobs = 30, centers = ('C1','C2','C3',"C4","C5","C6"),
                              center_caps = {'C1':3,'C2':2,'C3':3,"C4":2,"C5":3,"C6":2}):
+    """
+    Generates a random FJSP instance with multiple jobs, centers, and sequence-dependent setup times.
+
+    Args:
+        num_jobs: Number of jobs to generate.
+        centers: Tuple of center names.
+        center_caps: Dictionary mapping each center to its machine capacity.
+
+    Returns:
+        jobs_data: Dictionary mapping job ID to a list of operations (duration, center).
+        release_dates: Dictionary mapping job ID to its release time.
+        due_dates: Dictionary mapping job ID to its due date.
+        weights: Dictionary mapping job ID to its tardiness weight.
+        setup_times: Dictionary mapping machine name to setup times between operation pairs.
+        center_caps: The same center capacity dictionary passed in.
+    """
 
     jobs_data, release_dates, due_dates, weights = {}, {}, {}, {}
     machines = []
@@ -118,7 +155,6 @@ def generate_random_instance(num_jobs = 30, centers = ('C1','C2','C3',"C4","C5",
         release_dates[j] = random.randint(0, (due_dates[j] - total_dur) // 2)
         weights[j]       = random.randint(1, 5)
 
-    # 隨機設定序依換線時間
     for m in machines:
         all_ops = [(j, o) for j, ops in jobs_data.items()
                           for o in range(len(ops))
@@ -130,16 +166,28 @@ def generate_random_instance(num_jobs = 30, centers = ('C1','C2','C3',"C4","C5",
     return jobs_data, release_dates, due_dates, weights, setup_times, center_caps
 
 def plot_gantt(schedule, title="Gantt Chart"):
-    # 1. 準備 y 軸：機台列表與對應座標
+    """
+    Plots a Gantt chart for a given job schedule using matplotlib.
+
+    Args:
+        schedule: Dictionary mapping job ID to a list of operations.
+                  Each operation is a tuple: (operation index, machine name, start time, end time).
+        title: Title of the chart.
+
+    Returns:
+        None. Displays the Gantt chart.
+    """
+
+    # Prepare y-axis: list of machines and their vertical positions
     machines = sorted({ m for ops in schedule.values() for _, m, _, _ in ops })
     y_pos = { m: i for i, m in enumerate(machines) }
 
-    # 2. 顏色映射 (以 job_id 分組上色)
+    # Color mapping: assign a unique color to each job ID
     cmap = plt.get_cmap("tab20")
     job_ids = sorted(schedule)
     color_map = { j: cmap(i % 20) for i, j in enumerate(job_ids) }
 
-    # 3. 繪圖
+    # Plot each operation as a horizontal bar
     fig, ax = plt.subplots(figsize=(12, len(machines)*0.6+1))
     for j, ops in schedule.items():
         for op_idx, m, st, en in ops:
@@ -157,7 +205,6 @@ def plot_gantt(schedule, title="Gantt Chart"):
                     color="white",
                     fontsize=8)
 
-    # 4. 美化
     ax.set_yticks(list(y_pos.values()))
     ax.set_yticklabels(machines)
     ax.set_xlabel("Time")
@@ -178,20 +225,28 @@ class SchedulingProblem:
         self.alpha       = alpha
 
     def generate_times(self, machine_assign, priority = None):
-        # 準備所有機台與時線
+        """
+        Simulates scheduling based on machine assignments and optional operation priority.
+
+        Args:
+            machine_assign: Mapping from (job, operation) to assigned machine.
+            priority: Optional list of operations to schedule in order.
+
+        Returns:
+            doc_times: Mapping from (job, operation) to (start, end) times.
+        """
+
         machines = [f"{c}_{k}"
                     for c, cap in self.center_caps.items()
                     for k in range(cap)]
         mc_timeline = {m: [] for m in machines}
-
-        # 記錄每道工序 (j,o) 的 (start, end)
         doc_times = {}
         unscheduled = set(machine_assign.keys())
 
         if not priority:
             while unscheduled:
                 ready = [(j, o) for (j, o) in unscheduled if o == 0 or (j, o-1) in doc_times]
-                # 計算每個 ready 工序的最早啟動
+                # Greedy scheduling based on readiness
                 earliest = {}
                 for (j, o) in ready:
                     m = machine_assign[(j, o)]
@@ -208,17 +263,15 @@ class SchedulingProblem:
 
                     earliest[(j, o)] = t
 
-                # 選擇啟動時間最小者
                 sel = min(earliest, key=earliest.get)
                 st = earliest[sel]
                 dur, _ = self.jobs_data[sel[0]][sel[1]]
                 end = st + dur
-
-                # 更新機台時線、doc_times、unscheduled
                 mc_timeline[machine_assign[sel]].append((end, sel))
                 doc_times[sel] = (st, end)
                 unscheduled.remove(sel)
         else:
+            # Schedule based on provided priority list
             ready = priority
             for (j, o) in ready:
                 m = machine_assign[(j, o)]
@@ -242,6 +295,18 @@ class SchedulingProblem:
         return doc_times
 
     def encode(self, seed_solution = None, priority = None):
+        """
+        Generates a machine assignment and corresponding operation times.
+
+        Args:
+            seed_solution: Optional seed machine assignment and times.
+            priority: Optional scheduling priority list.
+
+        Returns:
+            machine_assign: Mapping from (job, operation) to machine.
+            times: Mapping from (job, operation) to (start, end) times.
+        """
+
         if seed_solution:
             machine_assign = seed_solution[0]
         else:
@@ -258,6 +323,16 @@ class SchedulingProblem:
         return machine_assign, times
 
     def decode(self, times):
+        """
+        Computes the objective value based on operation times.
+
+        Args:
+            times: Mapping from (job, operation) to (start, end) times.
+
+        Returns:
+            Objective value: alpha * makespan + (1 - alpha) * total weighted tardiness.
+        """
+
         makespan = max(end for _, end in times.values())
         tardiness = [0] * len(self.jobs_data)
         for j in range(len(self.jobs_data)):
@@ -274,6 +349,18 @@ class SchedulingProblem:
 
     @staticmethod
     def generate_schedule(machine_assign, times):
+        """
+        Converts raw machine assignments and operation times into a structured schedule.
+
+        Args:
+            machine_assign: Mapping from (job, operation) to assigned machine.
+            times: Mapping from (job, operation) to (start, end) times.
+
+        Returns:
+            schedule: Dictionary mapping job ID to a list of scheduled operations,
+                      each as (operation index, machine, start time, end time).
+        """
+
         schedule = {}
         for (j,o), (st,end) in times.items():
             m = machine_assign[(j,o)]

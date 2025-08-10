@@ -3,6 +3,22 @@ import copy
 from collections import defaultdict, deque
 
 class TabuSearch:
+    """
+    A Tabu Search template for scheduling problems.
+    The Tabu Search explores the neighborhood of the current solution by
+    swapping adjacent operations on a single machine. It uses a tabu list
+    to forbid reversing recent moves, guiding the search away from cycles.
+
+    Attributes:
+        problem:   Problem interface providing
+                       - encode(assign=None, priority=None) -> (machine_assign, time_dict)
+                       - decode(time_dict) -> objective value (to minimize)
+                       - generate_schedule(assign, time_dict) -> detailed schedule
+        steps:     Maximum number of iterations
+        tabu_size: Maximum length of the tabu list
+        tabu_list: deque storing recent moves as sorted lists of op-tuples (FIFO)
+    """
+
     def __init__(self, problem, steps = 500, tabu_size = 20):
         self.problem = problem
         self.size = tabu_size
@@ -10,9 +26,27 @@ class TabuSearch:
         self.tabu_list = deque()
 
     def evaluate(self, target):
+        """
+        Compute the objective value of a solution.
+        """
+
         return self.problem.decode(target[1])
 
     def tabu_swap(self, target):
+        """
+        Explore neighborhood by swapping adjacent ops on one random machine,
+        respecting the tabu list, and return the best admissible neighbor.
+        Steps:
+        1. Decode current schedule to get start times per operation.
+        2. Group operations by machine.
+        3. Pick a random machine with at least 2 ops.
+        4. For each adjacent pair on that machine:
+           a. If the swap move is not in the tabu list, apply the swap to a copy of the priority list,
+           b. Re-encode and evaluate.
+           c. Track the best neighbor and its defining move.
+        5. If the best non-tabu neighbor is found, push it into the tabu_list.
+        """
+
         best = None
         best_obj = float('inf')
         new_target = copy.deepcopy(target)
@@ -73,6 +107,10 @@ class TabuSearch:
         return new_target
 
     def run(self, seed_solution):
+        """
+        Execute the Tabu Search loop.
+        """
+
         curr = seed_solution
         curr_obj = self.evaluate(curr)
         best = curr
