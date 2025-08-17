@@ -53,12 +53,7 @@ class TabuSearch:
         new_assign, new_times = new_target
 
         if random.random() < prob:
-            for j, ops in self.problem.jobs_data.items():
-                for o in range(len(ops)):
-                    centers = ops[o][1]
-                    p = random.choice([centers])
-                    k = random.randrange(self.problem.center_caps[p])
-                    new_assign[(j, o)] = f"{p}_{k}"
+            new_assign, new_times = self.problem.encode()
 
         priority = []
         schedule = self.problem.generate_schedule(new_assign, new_times)

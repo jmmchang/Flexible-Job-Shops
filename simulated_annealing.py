@@ -50,12 +50,7 @@ class SimulatedAnnealing:
         new_assign, new_times = target
 
         if random.random() < prob:
-            for j, ops in self.problem.jobs_data.items():
-                for o in range(len(ops)):
-                    centers = ops[o][1]
-                    p = random.choice([centers])
-                    k = random.randrange(self.problem.center_caps[p])
-                    new_assign[(j, o)] = f"{p}_{k}"
+            new_assign, new_times = self.problem.encode()
 
         priority = []
         schedule = self.problem.generate_schedule(new_assign, new_times)
@@ -90,8 +85,8 @@ class SimulatedAnnealing:
         for x, _, _ in priority:
             grouped_priority.append(groups[x].popleft())
 
-        new_machine, new_times = self.problem.encode(priority = grouped_priority)
-        new_target = [new_machine, new_times]
+        new_assign, new_times = self.problem.encode(priority = grouped_priority)
+        new_target = [new_assign, new_times]
 
         return new_target
 

@@ -49,75 +49,50 @@ class GeneticAlgorithm:
         Machine assignment mutation:
         """
 
-        assign, times = individual
-        for j, ops in self.problem.jobs_data.items():
-            for o in range(len(ops)):
-                centers = ops[o][1]
-                p = random.choice([centers])
-                k = random.randrange(self.problem.center_caps[p])
-                assign[(j, o)] = f"{p}_{k}"
-
-        # Build full schedule to inspect start times
-        schedule = self.problem.generate_schedule(assign, times)
-
-        # Rebuild a global priority list, preserving job-internal order
-        priority_list = []
-        for job_id, ops in schedule.items():
-            for op_idx, m, st, _ in ops:
-                priority_list.append((job_id, op_idx, st))
-
-        priority_list.sort(key = lambda x: x[2])
-        priority_list = [(j, o) for (j, o, st) in priority_list]
-
-        # Encode again to regenerate machine_assign & times
-        new_assign, new_times = self.problem.encode(priority = priority_list)
-
-        return new_assign, new_times
+        return self.problem.encode()
 
     def _mutate_sequence(self, individual):
         """
-        Sequence mutation: pick a machine with ≥2 operations,
+        Sequence mutation: pick a machine with at least two operations,
         sort its ops by start time, swap a random adjacent pair,
         then re-encode using the new job-operation priority.
         """
 
-        assign, times = individual
-
-        # Build full schedule to inspect start times
-        schedule = self.problem.generate_schedule(assign, times)
-
-        # Group operations by machine
+        new_assign, new_times = individual
+        priority = []
+        schedule = self.problem.generate_schedule(new_assign, new_times)
         by_machine = defaultdict(list)
-        for job_id, ops in schedule.items():
-            for op_idx, m, st, _ in ops:
-                by_machine[m].append((job_id, op_idx, st))
 
-        # Find machines with at least two ops
-        candidates = [m for m, lst in by_machine.items() if len(lst) > 1]
-        if not candidates:
-            return assign, times
+        for j, ops in schedule.items():
+            for o, m, st, end in ops:
+                priority.append((j, o, st))
+                by_machine[m].append((j, o, st))
 
-        # Choose one machine and swap a random adjacent pair in time order
-        m = random.choice(candidates)
+        machines = [m for m, lst in by_machine.items() if len(lst) > 1]
+        if not machines:
+            return new_assign, new_times
+
+        m = random.choice(machines)
+        priority.sort(key = lambda x: x[2])
         ops_m = sorted(by_machine[m], key = lambda x: x[2])
-        i = random.randint(1, len(ops_m) - 1)
-        # Swap positions in the time-order list
-        ops_m[i - 1], ops_m[i] = ops_m[i], ops_m[i - 1]
+        idx = random.randint(1, len(ops_m) - 1)
+        j_cur, o_cur, st_cur = ops_m[idx]
+        j_pre, o_pre, st_pre = ops_m[idx - 1]
+        priority[priority.index((j_cur,o_cur,st_cur))], priority[priority.index((j_pre,o_pre,st_pre))] = (j_pre, o_pre, st_pre), (j_cur, o_cur, st_cur)
 
-        # Rebuild a global priority list, preserving job-internal order
-        priority_list = []
-        temp = []
-        for machine_ops in by_machine.values():
-            temp.extend(machine_ops)
+        groups = defaultdict(list)
+        for (x, y, _) in priority:
+            groups[x].append((x, y))
 
-        # Replace the sequence for machine m
-        temp = [x for x in temp if x[0] != m] + ops_m
-        temp.sort(key = lambda x: x[2])
-        for job_id, op_idx, _ in temp:
-            priority_list.append((job_id, op_idx))
+        for x in groups:
+            groups[x].sort(key = lambda t: t[1])
+            groups[x] = deque(groups[x])
 
-        # Encode again to regenerate machine_assign & times
-        new_assign, new_times = self.problem.encode(priority = priority_list)
+        grouped_priority = []
+        for x, _, _ in priority:
+            grouped_priority.append(groups[x].popleft())
+
+        new_assign, new_times = self.problem.encode(priority = grouped_priority)
 
         return new_assign, new_times
 
