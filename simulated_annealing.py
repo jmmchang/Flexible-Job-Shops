@@ -35,12 +35,12 @@ class SimulatedAnnealing:
 
         return self.problem.decode(target[1])
 
-    def random_swap(self, target):
+    def random_swap(self, target, prob = 0.2):
         """
         Generate a neighbor by swapping two adjacent operations on a random machine.
         Steps:
             1. Build the full schedule to inspect start times.
-            2. Group operations by machine.
+            2. Reassign machines with small probability.
             3. Pick a machine with at least two operations.
             4. Swap a random adjacent pair in time order.
             5. Reconstruct a job-operation priority list.
@@ -48,6 +48,15 @@ class SimulatedAnnealing:
         """
 
         new_assign, new_times = target
+
+        if random.random() < prob:
+            for j, ops in self.problem.jobs_data.items():
+                for o in range(len(ops)):
+                    centers = ops[o][1]
+                    p = random.choice([centers])
+                    k = random.randrange(self.problem.center_caps[p])
+                    new_assign[(j, o)] = f"{p}_{k}"
+
         priority = []
         schedule = self.problem.generate_schedule(new_assign, new_times)
         by_machine = defaultdict(list)

@@ -37,19 +37,40 @@ class GeneticAlgorithm:
             else:
                 self.population.append(self.mutate(seed_solution))
 
-    def evaluate_fitness(self, target):
+    def evaluate_fitness(self, individual):
         """
         Compute the fitness (objective) of an individual.
         """
 
-        return self.problem.decode(target[1])
+        return self.problem.decode(individual[1])
 
     def _mutate_assignment(self, individual):
         """
-        Single-point machine assignment mutation:
+        Machine assignment mutation:
         """
 
-        new_assign, new_times = self.problem.encode()
+        assign, times = individual
+        for j, ops in self.problem.jobs_data.items():
+            for o in range(len(ops)):
+                centers = ops[o][1]
+                p = random.choice([centers])
+                k = random.randrange(self.problem.center_caps[p])
+                assign[(j, o)] = f"{p}_{k}"
+
+        # Build full schedule to inspect start times
+        schedule = self.problem.generate_schedule(assign, times)
+
+        # Rebuild a global priority list, preserving job-internal order
+        priority_list = []
+        for job_id, ops in schedule.items():
+            for op_idx, m, st, _ in ops:
+                priority_list.append((job_id, op_idx, st))
+
+        priority_list.sort(key = lambda x: x[2])
+        priority_list = [(j, o) for (j, o, st) in priority_list]
+
+        # Encode again to regenerate machine_assign & times
+        new_assign, new_times = self.problem.encode(priority = priority_list)
 
         return new_assign, new_times
 
@@ -62,28 +83,28 @@ class GeneticAlgorithm:
 
         assign, times = individual
 
-        # 1. Build full schedule to inspect start times
+        # Build full schedule to inspect start times
         schedule = self.problem.generate_schedule(assign, times)
 
-        # 2. Group operations by machine
+        # Group operations by machine
         by_machine = defaultdict(list)
         for job_id, ops in schedule.items():
             for op_idx, m, st, _ in ops:
                 by_machine[m].append((job_id, op_idx, st))
 
-        # 3. Find machines with at least two ops
+        # Find machines with at least two ops
         candidates = [m for m, lst in by_machine.items() if len(lst) > 1]
         if not candidates:
             return assign, times
 
-        # 4. Choose one machine and swap a random adjacent pair in time order
+        # Choose one machine and swap a random adjacent pair in time order
         m = random.choice(candidates)
-        ops_m = sorted(by_machine[m], key=lambda x: x[2])
+        ops_m = sorted(by_machine[m], key = lambda x: x[2])
         i = random.randint(1, len(ops_m) - 1)
         # Swap positions in the time-order list
         ops_m[i - 1], ops_m[i] = ops_m[i], ops_m[i - 1]
 
-        # 5. Rebuild a global priority list, preserving job-internal order
+        # Rebuild a global priority list, preserving job-internal order
         priority_list = []
         temp = []
         for machine_ops in by_machine.values():
@@ -95,7 +116,7 @@ class GeneticAlgorithm:
         for job_id, op_idx, _ in temp:
             priority_list.append((job_id, op_idx))
 
-        # 6. Encode again to regenerate machine_assign & times
+        # Encode again to regenerate machine_assign & times
         new_assign, new_times = self.problem.encode(priority = priority_list)
 
         return new_assign, new_times

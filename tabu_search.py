@@ -32,16 +32,16 @@ class TabuSearch:
 
         return self.problem.decode(target[1])
 
-    def tabu_swap(self, target):
+    def tabu_swap(self, target, prob = 0.2):
         """
         Explore neighborhood by swapping adjacent ops on one random machine,
         respecting the tabu list, and return the best admissible neighbor.
         Steps:
         1. Decode current schedule to get start times per operation.
-        2. Group operations by machine.
+        2. Reassign machines with small probability.
         3. Pick a random machine with at least 2 ops.
         4. For each adjacent pair on that machine:
-           a. If the swap move is not in the tabu list, apply the swap to a copy of the priority list,
+           a. If the swap move is not in the tabu list, apply the swap.
            b. Re-encode and evaluate.
            c. Track the best neighbor and its defining move.
         5. If the best non-tabu neighbor is found, push it into the tabu_list.
@@ -51,6 +51,15 @@ class TabuSearch:
         best_obj = float('inf')
         new_target = copy.deepcopy(target)
         new_assign, new_times = new_target
+
+        if random.random() < prob:
+            for j, ops in self.problem.jobs_data.items():
+                for o in range(len(ops)):
+                    centers = ops[o][1]
+                    p = random.choice([centers])
+                    k = random.randrange(self.problem.center_caps[p])
+                    new_assign[(j, o)] = f"{p}_{k}"
+
         priority = []
         schedule = self.problem.generate_schedule(new_assign, new_times)
         by_machine = defaultdict(list)
